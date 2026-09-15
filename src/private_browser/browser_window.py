@@ -1,6 +1,8 @@
 from pathlib import Path
 from urllib.parse import quote_plus
 
+from chrome_ui import apply_chrome_ui, style_tab
+
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWebEngineCore import (
@@ -15,7 +17,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPushButton,
-    QTabWidget,
+    QStackedWidget,
+    QTabBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -53,13 +56,13 @@ class AddressBar(QLineEdit):
 
 class FindOverlay(QWidget):
     WIDTH = 360
-    HEIGHT = 46
+    HEIGHT = 44
 
     def __init__(
         self,
         browser_window: "BrowserWindow",
     ) -> None:
-        super().__init__(browser_window.tabs)
+        super().__init__(browser_window.browser_shell)
 
         self.browser_window = browser_window
 
@@ -78,42 +81,47 @@ class FindOverlay(QWidget):
         self.setStyleSheet(
             """
             QWidget#findOverlay {
-                background-color: #292929;
-                border: 1px solid #454545;
+                background-color: #292a2d;
+                border: 1px solid #45474a;
                 border-radius: 8px;
             }
 
-            QLineEdit {
-                background-color: #292929;
+            QWidget#findOverlay QLineEdit {
+                background-color: #292a2d;
                 color: #ffffff;
                 border: none;
-                padding: 5px 6px;
+                border-radius: 0px;
+                min-height: 28px;
+                max-height: 28px;
+                padding: 2px 6px;
                 selection-background-color: #3d6ea8;
                 selection-color: #ffffff;
             }
 
-            QLabel {
-                background-color: #292929;
+            QWidget#findOverlay QLabel {
+                background-color: #292a2d;
                 color: #dddddd;
-                padding-left: 5px;
-                padding-right: 5px;
+                padding-left: 4px;
+                padding-right: 4px;
             }
 
-            QPushButton {
-                background-color: #292929;
-                color: #ffffff;
+            QWidget#findOverlay QPushButton {
+                background-color: transparent;
+                color: #e8eaed;
                 border: none;
                 min-width: 28px;
+                max-width: 28px;
                 min-height: 28px;
-                border-radius: 4px;
+                max-height: 28px;
+                border-radius: 14px;
             }
 
-            QPushButton:hover {
-                background-color: #3a3a3a;
+            QWidget#findOverlay QPushButton:hover {
+                background-color: #3c4043;
             }
 
-            QPushButton:pressed {
-                background-color: #444444;
+            QWidget#findOverlay QPushButton:pressed {
+                background-color: #4a4d50;
             }
             """
         )
@@ -121,13 +129,13 @@ class FindOverlay(QWidget):
         layout = QHBoxLayout(self)
 
         layout.setContentsMargins(
-            12,
+            10,
             6,
-            8,
+            6,
             6,
         )
 
-        layout.setSpacing(4)
+        layout.setSpacing(3)
 
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Find")
@@ -193,16 +201,8 @@ class FindOverlay(QWidget):
 
         self.hide()
 
-    # --------------------------------------------------------
-    # Current Browser
-    # --------------------------------------------------------
-
     def browser(self) -> "BrowserView | None":
         return self.browser_window.current_browser()
-
-    # --------------------------------------------------------
-    # Open / Close
-    # --------------------------------------------------------
 
     def open_overlay(self) -> None:
         self.browser_window.position_find_overlay()
@@ -230,10 +230,6 @@ class FindOverlay(QWidget):
 
         if browser is not None:
             browser.setFocus()
-
-    # --------------------------------------------------------
-    # Search
-    # --------------------------------------------------------
 
     def search_live(
         self,
@@ -296,10 +292,6 @@ class FindOverlay(QWidget):
             f"{active}/{total}"
         )
 
-    # --------------------------------------------------------
-    # Keyboard
-    # --------------------------------------------------------
-
     def eventFilter(
         self,
         watched,
@@ -342,7 +334,7 @@ class FindOverlay(QWidget):
 
 
 class BrowserView(QWebEngineView):
-    """One WebEngine view = one browser tab."""
+    """One BrowserView represents one browser tab."""
 
     def __init__(
         self,
@@ -364,7 +356,8 @@ class BrowserView(QWebEngineView):
         self,
         window_type: QWebEnginePage.WebWindowType,
     ) -> QWebEngineView:
-        # Open link in new window
+
+        # Open link in new window.
         if (
             window_type
             == QWebEnginePage.WebWindowType.WebBrowserWindow
@@ -378,7 +371,7 @@ class BrowserView(QWebEngineView):
             if browser is not None:
                 return browser
 
-        # Open link in new tab / background tab / popup.
+        # Open link in new tab.
         return self.browser_window.add_new_tab(
             QUrl("about:blank"),
             "New Tab",
@@ -442,30 +435,140 @@ class BrowserWindow(QMainWindow):
         )
 
         # ====================================================
-        # Tabs
+        # TAB STRIP
         # ====================================================
 
-        self.tabs = QTabWidget()
-
-        self.tabs.setDocumentMode(True)
-        self.tabs.setTabsClosable(True)
-        self.tabs.setMovable(True)
-
-        self.tabs.tabCloseRequested.connect(
-            self.close_tab
+        self.tab_strip = QWidget()
+        self.tab_strip.setObjectName(
+            "tabStrip"
         )
 
-        self.tabs.currentChanged.connect(
+        self.tab_strip.setFixedHeight(
+            40
+        )
+
+        self.tab_strip_layout = QHBoxLayout(
+            self.tab_strip
+        )
+
+        self.tab_strip_layout.setContentsMargins(
+            8,
+            3,
+            8,
+            0,
+        )
+
+        self.tab_strip_layout.setSpacing(
+            2
+        )
+
+        # ----------------------------------------------------
+        # QTabBar
+        # ----------------------------------------------------
+
+        self.tab_bar = QTabBar()
+
+        self.tab_bar.setObjectName(
+            "browserTabBar"
+        )
+
+        self.tab_bar.setDocumentMode(
+            True
+        )
+
+        self.tab_bar.setTabsClosable(
+            True
+        )
+
+        self.tab_bar.setMovable(
+            True
+        )
+
+        # Tabs keep their natural width instead of stretching
+        # across the whole window.
+        self.tab_bar.setExpanding(
+            False
+        )
+
+        self.tab_bar.setUsesScrollButtons(
+            True
+        )
+
+        self.tab_bar.setElideMode(
+            Qt.TextElideMode.ElideRight
+        )
+
+        self.tab_bar.currentChanged.connect(
             self.current_tab_changed
         )
 
+        self.tab_bar.tabCloseRequested.connect(
+            self.close_tab
+        )
+
+        self.tab_bar.tabMoved.connect(
+            self.tab_moved
+        )
+
+        # ----------------------------------------------------
+        # + New Tab
+        # ----------------------------------------------------
+
+        self.new_tab_button = QToolButton()
+
+        self.new_tab_button.setObjectName(
+            "newTabButton"
+        )
+
+        self.new_tab_button.setText("+")
+
+        self.new_tab_button.setToolTip(
+            "New Tab (Ctrl+T)"
+        )
+
+        self.new_tab_button.setFixedSize(
+            28,
+            28,
+        )
+
+        self.new_tab_button.clicked.connect(
+            self.add_new_tab
+        )
+
+        # QTabBar takes only the width it needs.
+        self.tab_strip_layout.addWidget(
+            self.tab_bar,
+            0,
+        )
+
+        # + sits immediately after the final tab.
+        self.tab_strip_layout.addWidget(
+            self.new_tab_button,
+            0,
+            Qt.AlignmentFlag.AlignVCenter,
+        )
+
+        # Remaining empty title-strip area.
+        self.tab_strip_layout.addStretch(
+            1
+        )
+
+        self.browser_layout.addWidget(
+            self.tab_strip
+        )
+
         # ====================================================
-        # Custom Navigation Bar
+        # NAVIGATION BAR
         # ====================================================
 
         self.navigation_widget = QWidget()
+
         self.navigation_widget.setObjectName(
             "navigationBar"
+        )
+
+        self.navigation_widget.setFixedHeight(
+            46
         )
 
         self.navigation_layout = QHBoxLayout(
@@ -479,52 +582,119 @@ class BrowserWindow(QMainWindow):
             5,
         )
 
-        self.navigation_layout.setSpacing(5)
+        self.navigation_layout.setSpacing(
+            3
+        )
 
+        # ----------------------------------------------------
         # Back
+        # ----------------------------------------------------
+
         self.back_button = QToolButton()
+
+        self.back_button.setObjectName(
+            "navigationButton"
+        )
+
         self.back_button.setText("←")
-        self.back_button.setToolTip("Back")
+
+        self.back_button.setToolTip(
+            "Back"
+        )
+
+        self.back_button.setFixedSize(
+            32,
+            32,
+        )
 
         self.back_button.clicked.connect(
             self.go_back
         )
 
+        # ----------------------------------------------------
         # Forward
+        # ----------------------------------------------------
+
         self.forward_button = QToolButton()
+
+        self.forward_button.setObjectName(
+            "navigationButton"
+        )
+
         self.forward_button.setText("→")
+
         self.forward_button.setToolTip(
             "Forward"
+        )
+
+        self.forward_button.setFixedSize(
+            32,
+            32,
         )
 
         self.forward_button.clicked.connect(
             self.go_forward
         )
 
+        # ----------------------------------------------------
         # Reload
+        # ----------------------------------------------------
+
         self.reload_button = QToolButton()
+
+        self.reload_button.setObjectName(
+            "navigationButton"
+        )
+
         self.reload_button.setText("↻")
+
         self.reload_button.setToolTip(
             "Reload (F5)"
+        )
+
+        self.reload_button.setFixedSize(
+            32,
+            32,
         )
 
         self.reload_button.clicked.connect(
             self.reload_page
         )
 
+        # ----------------------------------------------------
         # Home
+        # ----------------------------------------------------
+
         self.home_button = QToolButton()
+
+        self.home_button.setObjectName(
+            "navigationButton"
+        )
+
         self.home_button.setText("⌂")
+
         self.home_button.setToolTip(
             "Home"
+        )
+
+        self.home_button.setFixedSize(
+            32,
+            32,
         )
 
         self.home_button.clicked.connect(
             self.go_home
         )
 
-        # Address / Search
+        # ----------------------------------------------------
+        # Address / Search Bar
+        # ----------------------------------------------------
+
         self.url_bar = AddressBar()
+
+        self.url_bar.setObjectName(
+            "addressBar"
+        )
 
         self.url_bar.setPlaceholderText(
             "Search or enter address"
@@ -532,6 +702,10 @@ class BrowserWindow(QMainWindow):
 
         self.url_bar.setClearButtonEnabled(
             True
+        )
+
+        self.url_bar.setFixedHeight(
+            34
         )
 
         self.url_bar.returnPressed.connect(
@@ -554,38 +728,12 @@ class BrowserWindow(QMainWindow):
             self.home_button
         )
 
+        self.navigation_layout.addSpacing(
+            3
+        )
+
         self.navigation_layout.addWidget(
             self.url_bar,
-            1,
-        )
-
-        # ====================================================
-        # Add shell components
-        #
-        # QTabWidget normally owns its tab bar AND page area.
-        # We therefore use its native tab bar and place the
-        # navigation widget visually over the top of the page
-        # using a layout wrapper below.
-        # ====================================================
-
-        self.content_wrapper = QWidget()
-
-        self.content_layout = QVBoxLayout(
-            self.content_wrapper
-        )
-
-        self.content_layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0,
-        )
-
-        self.content_layout.setSpacing(0)
-
-        # Tabs contain the actual BrowserView pages.
-        self.content_layout.addWidget(
-            self.tabs,
             1,
         )
 
@@ -593,34 +741,19 @@ class BrowserWindow(QMainWindow):
             self.navigation_widget
         )
 
+        # ====================================================
+        # PAGE STACK
+        # ====================================================
+
+        self.page_stack = QStackedWidget()
+
+        self.page_stack.setObjectName(
+            "pageStack"
+        )
+
         self.browser_layout.addWidget(
-            self.content_wrapper,
+            self.page_stack,
             1,
-        )
-
-        # ====================================================
-        # New Tab Button
-        # ====================================================
-
-        self.new_tab_button = QToolButton()
-
-        self.new_tab_button.setText("+")
-        self.new_tab_button.setToolTip(
-            "New Tab (Ctrl+T)"
-        )
-
-        self.new_tab_button.setFixedSize(
-            34,
-            30,
-        )
-
-        self.new_tab_button.clicked.connect(
-            self.add_new_tab
-        )
-
-        self.tabs.setCornerWidget(
-            self.new_tab_button,
-            Qt.Corner.TopRightCorner,
         )
 
         # ====================================================
@@ -671,8 +804,8 @@ class BrowserWindow(QMainWindow):
             self.focus_url_bar
         )
 
-        # Ctrl+F must use ApplicationShortcut because
-        # Chromium/WebEngine can otherwise consume it.
+        # Chromium/WebEngine may consume Ctrl+F.
+        # ApplicationShortcut ensures our overlay receives it.
         self.find_shortcut = QShortcut(
             QKeySequence.StandardKey.Find,
             self,
@@ -705,7 +838,7 @@ class BrowserWindow(QMainWindow):
         )
 
         # ====================================================
-        # Chromium-style Dark UI
+        # Chrome / Brave inspired styling
         # ====================================================
 
         self.setStyleSheet(
@@ -718,33 +851,28 @@ class BrowserWindow(QMainWindow):
                 background-color: #202124;
             }
 
-            QWidget#navigationBar {
-                background-color: #2b2c2f;
-                border: none;
-            }
+            /* ==============================================
+               TAB STRIP
+               ============================================== */
 
-            QTabWidget::pane {
-                border: none;
-                background-color: #202124;
-            }
-
-            QTabBar {
+            QWidget#tabStrip {
                 background-color: #202124;
                 border: none;
             }
 
-            QTabBar::tab {
+            QTabBar#browserTabBar::tab {
                 background-color: #202124;
-                color: #cfcfcf;
+                color: #d0d0d0;
 
-                min-width: 150px;
-                max-width: 230px;
+                min-width: 180px;
+                max-width: 240px;
+
                 height: 34px;
 
-                padding-left: 12px;
-                padding-right: 10px;
+                padding-left: 14px;
+                padding-right: 18px;
 
-                margin-top: 4px;
+                margin-top: 3px;
                 margin-right: 2px;
 
                 border: none;
@@ -753,48 +881,108 @@ class BrowserWindow(QMainWindow):
                 border-top-right-radius: 9px;
             }
 
-            QTabBar::tab:selected {
+            QTabBar#browserTabBar::tab:selected {
                 background-color: #2b2c2f;
                 color: #ffffff;
             }
 
-            QTabBar::tab:hover:!selected {
+            QTabBar#browserTabBar::tab:hover:!selected {
                 background-color: #292a2d;
             }
 
-            QWidget#navigationBar QToolButton {
+            /*
+             * Native close buttons created by QTabBar.
+             * Keep them compact like Chromium tabs.
+             */
+            QTabBar#browserTabBar QToolButton {
+                background-color: transparent;
+                color: #d8d8d8;
+
+                border: none;
+                border-radius: 9px;
+
+                min-width: 18px;
+                max-width: 18px;
+
+                min-height: 18px;
+                max-height: 18px;
+
+                padding: 0px;
+
+                margin-left: 3px;
+                margin-right: 6px;
+            }
+
+            QTabBar#browserTabBar QToolButton:hover {
+                background-color: #45474a;
+            }
+
+            /* ==============================================
+               NEW TAB +
+               ============================================== */
+
+            QToolButton#newTabButton {
+                background-color: transparent;
+                color: #e8eaed;
+
+                border: none;
+                border-radius: 14px;
+
+                font-size: 18px;
+                font-weight: 400;
+
+                padding: 0px;
+
+                margin-left: 4px;
+            }
+
+            QToolButton#newTabButton:hover {
+                background-color: #3c4043;
+            }
+
+            QToolButton#newTabButton:pressed {
+                background-color: #4a4d50;
+            }
+
+            /* ==============================================
+               NAVIGATION BAR
+               ============================================== */
+
+            QWidget#navigationBar {
+                background-color: #2b2c2f;
+                border: none;
+            }
+
+            QToolButton#navigationButton {
                 background-color: transparent;
                 color: #e8eaed;
 
                 border: none;
                 border-radius: 16px;
 
-                min-width: 32px;
-                max-width: 32px;
-
-                min-height: 32px;
-                max-height: 32px;
+                padding: 0px;
 
                 font-size: 16px;
             }
 
-            QWidget#navigationBar QToolButton:hover {
+            QToolButton#navigationButton:hover {
                 background-color: #3c4043;
             }
 
-            QWidget#navigationBar QToolButton:pressed {
-                background-color: #45494c;
+            QToolButton#navigationButton:pressed {
+                background-color: #4a4d50;
             }
 
-            QWidget#navigationBar QLineEdit {
+            /* ==============================================
+               ADDRESS BAR
+               ============================================== */
+
+            QLineEdit#addressBar {
                 background-color: #202124;
                 color: #e8eaed;
 
                 border: 1px solid transparent;
                 border-radius: 17px;
-
-                min-height: 32px;
-                max-height: 32px;
 
                 padding-left: 13px;
                 padding-right: 13px;
@@ -803,21 +991,22 @@ class BrowserWindow(QMainWindow):
                 selection-color: #ffffff;
             }
 
-            QWidget#navigationBar QLineEdit:focus {
+            QLineEdit#addressBar:hover {
+                background-color: #252629;
+            }
+
+            QLineEdit#addressBar:focus {
                 background-color: #202124;
                 border: 1px solid #5f6368;
             }
 
-            QTabWidget QToolButton {
-                background-color: transparent;
-                color: #e8eaed;
+            /* ==============================================
+               WEB CONTENT AREA
+               ============================================== */
 
+            QStackedWidget#pageStack {
+                background-color: #202124;
                 border: none;
-                border-radius: 14px;
-            }
-
-            QTabWidget QToolButton:hover {
-                background-color: #3c4043;
             }
             """
         )
@@ -825,6 +1014,8 @@ class BrowserWindow(QMainWindow):
         # ====================================================
         # First Tab
         # ====================================================
+
+        apply_chrome_ui(self)
 
         self.add_new_tab(
             QUrl(HOME_URL),
@@ -838,7 +1029,7 @@ class BrowserWindow(QMainWindow):
     def current_browser(
         self,
     ) -> BrowserView | None:
-        widget = self.tabs.currentWidget()
+        widget = self.page_stack.currentWidget()
 
         if isinstance(
             widget,
@@ -857,7 +1048,8 @@ class BrowserWindow(QMainWindow):
         url: QUrl | None = None,
         label: str = "New Tab",
     ) -> BrowserView:
-        if url is None:
+
+        if url is None or isinstance(url, bool):
             url = QUrl(
                 "about:blank"
             )
@@ -867,13 +1059,29 @@ class BrowserWindow(QMainWindow):
             self.profile,
         )
 
-        index = self.tabs.addTab(
-            browser,
-            label,
+        # Add WebEngine view to page stack.
+        stack_index = (
+            self.page_stack.addWidget(
+                browser
+            )
         )
 
-        self.tabs.setCurrentIndex(
-            index
+        # Add matching tab.
+        tab_index = (
+            self.tab_bar.addTab(
+                label
+            )
+        )
+
+        # They should remain aligned.
+        style_tab(self, tab_index)
+
+        self.page_stack.setCurrentIndex(
+            stack_index
+        )
+
+        self.tab_bar.setCurrentIndex(
+            tab_index
         )
 
         browser.urlChanged.connect(
@@ -892,7 +1100,17 @@ class BrowserWindow(QMainWindow):
             )
         )
 
-        browser.setUrl(url)
+        browser.iconChanged.connect(
+            lambda icon, browser=browser: self.tab_bar.setTabIcon(
+                self.page_stack.indexOf(browser), icon
+            )
+        )
+
+        browser.setUrl(
+            url
+        )
+
+        self.position_find_overlay()
 
         return browser
 
@@ -900,19 +1118,34 @@ class BrowserWindow(QMainWindow):
         self,
         index: int,
     ) -> None:
-        if self.tabs.count() == 1:
+
+        # Keep at least one tab alive.
+        if self.tab_bar.count() == 1:
             return
 
-        widget = self.tabs.widget(
+        widget = self.page_stack.widget(
             index
         )
 
-        self.tabs.removeTab(
+        self.tab_bar.removeTab(
             index
         )
 
         if widget is not None:
+            self.page_stack.removeWidget(
+                widget
+            )
+
             widget.deleteLater()
+
+        current_index = (
+            self.tab_bar.currentIndex()
+        )
+
+        if current_index >= 0:
+            self.page_stack.setCurrentIndex(
+                current_index
+            )
 
         self.position_find_overlay()
 
@@ -920,13 +1153,27 @@ class BrowserWindow(QMainWindow):
         self,
     ) -> None:
         self.close_tab(
-            self.tabs.currentIndex()
+            self.tab_bar.currentIndex()
         )
 
     def current_tab_changed(
         self,
         index: int,
     ) -> None:
+
+        if index < 0:
+            return
+
+        if (
+            index
+            >= self.page_stack.count()
+        ):
+            return
+
+        self.page_stack.setCurrentIndex(
+            index
+        )
+
         browser = self.current_browser()
 
         if browser is None:
@@ -962,14 +1209,43 @@ class BrowserWindow(QMainWindow):
                 text
             )
 
-            self.position_find_overlay()
+        self.position_find_overlay()
+
+    def tab_moved(
+        self,
+        from_index: int,
+        to_index: int,
+    ) -> None:
+        if from_index == to_index:
+            return
+
+        widget = self.page_stack.widget(
+            from_index
+        )
+
+        if widget is None:
+            return
+
+        self.page_stack.removeWidget(
+            widget
+        )
+
+        self.page_stack.insertWidget(
+            to_index,
+            widget,
+        )
+
+        self.page_stack.setCurrentIndex(
+            to_index
+        )
 
     def update_tab_title(
         self,
         title: str,
         browser: BrowserView,
     ) -> None:
-        index = self.tabs.indexOf(
+
+        index = self.page_stack.indexOf(
             browser
         )
 
@@ -981,15 +1257,20 @@ class BrowserWindow(QMainWindow):
 
         display_title = title
 
-        if len(display_title) > 30:
+        if len(display_title) > 28:
             display_title = (
-                display_title[:27]
+                display_title[:25]
                 + "..."
             )
 
-        self.tabs.setTabText(
+        self.tab_bar.setTabText(
             index,
             display_title,
+        )
+
+        self.tab_bar.setTabToolTip(
+            index,
+            title,
         )
 
         if browser == self.current_browser():
@@ -1004,6 +1285,7 @@ class BrowserWindow(QMainWindow):
     def create_new_window(
         self,
     ) -> "BrowserWindow":
+
         new_window = BrowserWindow()
 
         self.child_windows.append(
@@ -1021,6 +1303,7 @@ class BrowserWindow(QMainWindow):
     def navigate_to_url(
         self,
     ) -> None:
+
         text = (
             self.url_bar
             .text()
@@ -1036,12 +1319,16 @@ class BrowserWindow(QMainWindow):
                 "https://",
             )
         ):
-            url = QUrl(text)
+            url = QUrl(
+                text
+            )
 
         elif text.startswith(
             "about:"
         ):
-            url = QUrl(text)
+            url = QUrl(
+                text
+            )
 
         elif (
             "." in text
@@ -1064,13 +1351,16 @@ class BrowserWindow(QMainWindow):
         browser = self.current_browser()
 
         if browser is not None:
-            browser.setUrl(url)
+            browser.setUrl(
+                url
+            )
 
     def update_url_bar(
         self,
         url: QUrl,
         browser: BrowserView,
     ) -> None:
+
         if (
             browser
             != self.current_browser()
@@ -1088,6 +1378,7 @@ class BrowserWindow(QMainWindow):
     def focus_url_bar(
         self,
     ) -> None:
+
         self.url_bar.setFocus()
         self.url_bar.selectAll()
 
@@ -1095,25 +1386,37 @@ class BrowserWindow(QMainWindow):
     # Navigation
     # ========================================================
 
-    def go_back(self) -> None:
+    def go_back(
+        self,
+    ) -> None:
+
         browser = self.current_browser()
 
         if browser is not None:
             browser.back()
 
-    def go_forward(self) -> None:
+    def go_forward(
+        self,
+    ) -> None:
+
         browser = self.current_browser()
 
         if browser is not None:
             browser.forward()
 
-    def reload_page(self) -> None:
+    def reload_page(
+        self,
+    ) -> None:
+
         browser = self.current_browser()
 
         if browser is not None:
             browser.reload()
 
-    def go_home(self) -> None:
+    def go_home(
+        self,
+    ) -> None:
+
         browser = self.current_browser()
 
         if browser is not None:
@@ -1124,8 +1427,8 @@ class BrowserWindow(QMainWindow):
     def go_back_with_keyboard(
         self,
     ) -> None:
-        # Never navigate backwards while the user
-        # is editing our browser UI.
+
+        # Do not navigate back while editing our browser UI.
         if self.url_bar.hasFocus():
             return
 
@@ -1145,38 +1448,33 @@ class BrowserWindow(QMainWindow):
     def show_find_overlay(
         self,
     ) -> None:
+
         self.find_overlay.open_overlay()
 
     def position_find_overlay(
         self,
     ) -> None:
+
         if not hasattr(
             self,
             "find_overlay",
         ):
             return
 
-        parent_width = (
-            self.tabs.width()
-        )
-
         margin = 12
 
         x = (
-            parent_width
+            self.browser_shell.width()
             - self.find_overlay.width()
             - margin
         )
 
-        tab_bar_height = (
-            self.tabs
-            .tabBar()
-            .height()
-        )
-
+        # Position directly over the upper-right portion
+        # of the web page, below tabs + navigation.
         y = (
-            tab_bar_height
-            + margin
+            self.tab_strip.height()
+            + self.navigation_widget.height()
+            + 8
         )
 
         x = max(
@@ -1196,57 +1494,62 @@ class BrowserWindow(QMainWindow):
     # Downloads / Save Link / Save Page
     # ========================================================
 
+    # ========================================================
+    # Downloads / Save Link / Save Page
+    # ========================================================
+
     def handle_download(
-        self,
-        download,
-    ) -> None:
-        suggested_name = (
-            download
-            .suggestedFileName()
-        )
+            self,
+            download,
+        ) -> None:
 
-        if not suggested_name:
-            suggested_name = "download"
+            suggested_name = (
+                download
+                .suggestedFileName()
+            )
 
-        downloads_folder = (
-            Path.home()
-            / "Downloads"
-        )
+            if not suggested_name:
+                suggested_name = "download"
 
-        suggested_path = (
-            downloads_folder
-            / suggested_name
-        )
+            downloads_folder = (
+                Path.home()
+                / "Downloads"
+            )
 
-        file_path, _ = (
-            QFileDialog.getSaveFileName(
-                self,
-                "Save File",
+            suggested_path = (
+                downloads_folder
+                / suggested_name
+            )
+
+            file_path, _ = (
+                QFileDialog.getSaveFileName(
+                    self,
+                    "Save File",
+                    str(
+                        suggested_path
+                    ),
+                )
+            )
+
+            if not file_path:
+                download.cancel()
+                return
+
+            destination = Path(
+                file_path
+            )
+
+            download.setDownloadDirectory(
                 str(
-                    suggested_path
-                ),
+                    destination.parent
+                )
             )
-        )
 
-        if not file_path:
-            download.cancel()
-            return
-
-        destination = Path(
-            file_path
-        )
-
-        download.setDownloadDirectory(
-            str(
-                destination.parent
+            download.setDownloadFileName(
+                destination.name
             )
-        )
 
-        download.setDownloadFileName(
-            destination.name
-        )
-
-        download.accept()
+            download.accept()
 
     # ========================================================
     # Window Events
@@ -1256,6 +1559,7 @@ class BrowserWindow(QMainWindow):
         self,
         event,
     ) -> None:
+
         super().resizeEvent(
             event
         )
