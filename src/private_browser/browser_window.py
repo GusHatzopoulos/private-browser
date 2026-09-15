@@ -11,6 +11,7 @@ from PySide6.QtWebEngineCore import (
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -804,20 +805,9 @@ class BrowserWindow(QMainWindow):
             self.focus_url_bar
         )
 
-        # Chromium/WebEngine may consume Ctrl+F.
-        # ApplicationShortcut ensures our overlay receives it.
-        self.find_shortcut = QShortcut(
-            QKeySequence.StandardKey.Find,
-            self,
-        )
-
-        self.find_shortcut.setContext(
-            Qt.ShortcutContext.ApplicationShortcut
-        )
-
-        self.find_shortcut.activated.connect(
-            self.show_find_overlay
-        )
+        # WebEngine handles keyboard events in an internal focus widget.
+        # Intercept Find before it reaches that widget, scoped to this window.
+        QApplication.instance().installEventFilter(self)
 
         self.reload_shortcut = QShortcut(
             QKeySequence("F5"),
@@ -1450,6 +1440,23 @@ class BrowserWindow(QMainWindow):
     ) -> None:
 
         self.find_overlay.open_overlay()
+
+    def eventFilter(self, watched, event) -> bool:
+        if (
+            event.type() in (
+                QEvent.Type.ShortcutOverride,
+                QEvent.Type.KeyPress,
+            )
+            and isinstance(watched, QWidget)
+            and watched.window() is self
+            and event.matches(QKeySequence.StandardKey.Find)
+        ):
+            event.accept()
+            if event.type() == QEvent.Type.KeyPress:
+                self.show_find_overlay()
+            return True
+
+        return super().eventFilter(watched, event)
 
     def position_find_overlay(
         self,
