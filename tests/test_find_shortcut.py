@@ -11,6 +11,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from browser_window import BrowserWindow
+import browser_window
+
+browser_window.HOME_URL = "about:blank"
 
 
 class FindShortcutTests(unittest.TestCase):

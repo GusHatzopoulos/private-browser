@@ -2,6 +2,7 @@ from pathlib import Path
 from urllib.parse import quote_plus
 
 from chrome_ui import apply_chrome_ui, style_tab
+from privacy import RequestBlocker
 
 from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -404,6 +405,10 @@ class BrowserWindow(QMainWindow):
         # ====================================================
 
         self.profile = QWebEngineProfile(self)
+        self.request_blocker = RequestBlocker(self.profile)
+        self.blocked_requests = 0
+        self.request_blocker.blocked.connect(self.count_blocked_request)
+        self.profile.setUrlRequestInterceptor(self.request_blocker)
 
         self.profile.downloadRequested.connect(
             self.handle_download
@@ -1028,6 +1033,9 @@ class BrowserWindow(QMainWindow):
             return widget
 
         return None
+
+    def count_blocked_request(self) -> None:
+        self.blocked_requests += 1
 
     # ========================================================
     # Tabs

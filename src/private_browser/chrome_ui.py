@@ -4,6 +4,7 @@ from PySide6.QtCore import QByteArray, QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QMenu, QTabBar, QToolButton
+from privacy_ui import show_privacy_settings
 
 
 def style_tab(window, index):
@@ -142,6 +143,7 @@ def apply_chrome_ui(window):
     menu.addSeparator()
     menu.addAction("Find in page", window.show_find_overlay)
     menu.addAction("Reload", window.reload_page)
+    menu.addAction("Privacy and connection…", lambda: show_privacy_settings(window))
     menu.addSeparator()
     menu.addAction("Close window", window.close)
     menu_button.setMenu(menu)
